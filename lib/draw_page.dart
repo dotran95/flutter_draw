@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+enum DrawStatus { ready, drawing, drag }
+
 class DrawPage extends StatefulWidget {
   const DrawPage({Key? key}) : super(key: key);
 
@@ -12,52 +14,140 @@ class DrawPage extends StatefulWidget {
 class _DrawPageState extends State<DrawPage> {
   final List<Offset> points = [];
   final List<Offset> items = [];
+  DrawStatus status = DrawStatus.ready;
+  double dragDx = 0;
+  double dragDy = 0;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      child: Container(
-        color: Colors.amber[50],
-        child: items.isNotEmpty
-            ? CustomPaint(
-                painter: DrawPath(items),
-                child: Container(),
-              )
-            : const SizedBox.shrink(),
+    return Container(
+      color: Colors.amber[50],
+      child: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onPanStart: onPanStart,
+                onPanUpdate: onPanUpdate,
+                onPanEnd: onPanEnd,
+                child: Container(
+                  color: Colors.amber[50],
+                  height: double.infinity,
+                  width: double.infinity,
+                  child: items.isNotEmpty
+                      ? CustomPaint(
+                          foregroundPainter: DrawPath(items),
+                          child: Container(),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(10),
+              color: Colors.white,
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  switch (status) {
+                    case DrawStatus.ready:
+                      setState(() {
+                        status = DrawStatus.drawing;
+                      });
+                      break;
+                    default:
+                      setState(() {
+                        points.clear();
+                        items.clear();
+                        status = DrawStatus.ready;
+                      });
+                  }
+                },
+                child: Center(child: Text(status == DrawStatus.ready ? 'Draw' : 'Cancel')),
+              ),
+            ),
+          ],
+        ),
       ),
-      onPanUpdate: (details) {
-        points.add(details.globalPosition);
-      },
-      onPanEnd: (details) {
-        print(points.length);
-        final newPoints = <Offset>[];
-        for (var i = 0; i < points.length; i++) {
-          if (i >= (points.length - 1)) {
-            break;
-          }
-
-          if (newPoints.isEmpty) {
-            newPoints.add(points[i]);
-            continue;
-          }
-          final currentPoint = newPoints.last;
-          final nextPoint = points[i + 1];
-          final distance = (nextPoint - currentPoint).distance;
-
-          print('Distan: $distance');
-
-          if (distance >= 50) {
-            newPoints.add(nextPoint);
-          }
-          setState(() {
-            items.clear();
-            items.addAll(newPoints);
-          });
-        }
-        print(items.length);
-        points.clear();
-      },
     );
+  }
+
+  onPanStart(DragStartDetails details) {
+    switch (status) {
+      case DrawStatus.drag:
+        setState(() {
+          dragDx = details.localPosition.dx;
+          dragDy = details.localPosition.dy;
+        });
+        break;
+      default:
+    }
+  }
+
+  onPanUpdate(DragUpdateDetails details) {
+    switch (status) {
+      case DrawStatus.drawing:
+        onDrawing(details.globalPosition);
+        break;
+      case DrawStatus.drag:
+        setState(() {
+          dragDx += details.delta.dx;
+          dragDy += details.delta.dy;
+          final index = items.indexWhere((element) => isInObject(element, dragDx, dragDy));
+          if (index > -1) {
+            items[index] = Offset(dragDx, dragDy);
+          }
+        });
+        break;
+      default:
+    }
+  }
+
+  onPanEnd(DragEndDetails details) {
+    switch (status) {
+      case DrawStatus.drawing:
+        onDrawEnded();
+        setState(() {
+          status = DrawStatus.drag;
+        });
+        break;
+      case DrawStatus.drag:
+        print(items.toString());
+        break;
+      default:
+    }
+  }
+
+  onDrawing(Offset position) {
+    points.add(position);
+  }
+
+  onDrawEnded() {
+    final newPoints = <Offset>[];
+    for (var i = 0; i < points.length; i++) {
+      if (i >= (points.length - 1)) {
+        break;
+      }
+
+      if (newPoints.isEmpty) {
+        newPoints.add(points[i]);
+        continue;
+      }
+      final currentPoint = newPoints.last;
+      final nextPoint = points[i + 1];
+      final distance = (nextPoint - currentPoint).distance;
+
+      print('Distan: $distance');
+
+      if (distance >= 50) {
+        newPoints.add(nextPoint);
+      }
+      setState(() {
+        items.clear();
+        items.addAll(newPoints);
+      });
+    }
+    points.clear();
   }
 }
 
@@ -113,6 +203,11 @@ class DrawPath extends CustomPainter {
 
   @override
   bool shouldRepaint(CustomPainter oldDelegate) {
-    return false;
+    return true;
   }
+}
+
+bool isInObject(Offset data, double dx, double dy) {
+  Path tempPath = Path()..addOval(Rect.fromCenter(center: data, width: 25, height: 25));
+  return tempPath.contains(Offset(dx, dy));
 }
